@@ -1,0 +1,16 @@
+x-app_environment: &app_environment
+  environment:
+    - EMAIL
+    - PASSWORD
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "11002:11002"
+    environment:
+      - EMAIL
+      - PASSWORD
+    restart: always
