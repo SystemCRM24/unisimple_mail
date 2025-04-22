@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     amo_subdomain: str
     db_user: str
     db_password: str
+    db_name: str
     db_host: str
     db_port: int
     mode: AppMode

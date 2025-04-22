@@ -1,13 +1,17 @@
+import asyncio
+
 from src.mail.file_parser import ExcelParser
 from src.mail.mail_connector import Gmail
 
 
-def main():
+async def main():
     gmail = Gmail()
-    file = gmail.get_most_recent_file()
-    parser = ExcelParser(file)
-    data = parser.parse()
+    file, file_name = gmail.get_most_recent_file()
+    parser = ExcelParser(file, file_name)
+    data = await parser.parse()
+    db_data = await parser.parse_for_db()
+    print(db_data)
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(main())

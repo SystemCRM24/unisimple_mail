@@ -19,7 +19,10 @@ class Gmail:
         self.data_folder = os.path.join(os.path.dirname(__file__), 'data')
         os.makedirs(self.data_folder, exist_ok=True)
 
-    def get_most_recent_file(self):
+    def get_most_recent_file(self) -> tuple[bytes, str]:
+        """
+        :return: Кортеж содержимого файла и его имени
+        """
         self.imap.select("INBOX")  # папка входящие
         res, messages = self.imap.search(None, "ALL")
         messages = messages[0].decode('utf-8').split(" ")
@@ -44,4 +47,4 @@ class Gmail:
                             with open(filepath, "wb") as f:
                                 f.write(data)
                             print(f"Сохранено вложение: {filepath}")
-                            return data
+                            return data, filename

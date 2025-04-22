@@ -1,11 +1,11 @@
-from datetime import date
+from datetime import date, datetime
 from typing import Optional, Iterable
 
 from pydantic import BaseModel, Field, EmailStr, AliasChoices, field_validator
 
 
 class StatePurchase(BaseModel):
-    url: Optional[str] = Field(None, alias='Закупка в ЕИС')
+    eis_url: Optional[str] = Field(None, alias='Закупка в ЕИС')
     winner_name: Optional[str] = Field(None, alias='Победитель')
     inn: Optional[str] = Field(None, alias="ИНН победителя")
     result_date: Optional[date] = Field(None, alias='Дата подведения итогов')
@@ -31,7 +31,6 @@ class StatePurchase(BaseModel):
 
     @field_validator('phone_1', 'phone_2', 'phone_3', 'inn', mode='before')
     def validate_numbers_to_str(cls, v: Optional[int | float]) -> Optional[str]:
-        print(v)
         if v is not None:
             val = int(v)
             return str(val)
@@ -48,3 +47,8 @@ class StatePurchase(BaseModel):
     @property
     def fios(self) -> Iterable[str]:
         return (fio for fio in (self.fio_1, self.fio_2, self.fio_3) if fio)
+
+
+class DBStatePurchase(StatePurchase):
+    extraction_dt: datetime
+    purchase_number: str = Field(..., alias='Номер закупки')
