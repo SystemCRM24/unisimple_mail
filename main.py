@@ -7,8 +7,11 @@ from src.db import PostgresDB
 
 async def main():
     last_extraction_dt = None
+    print("INIT GMAIL")
     gmail = Gmail()
+    print("GMAIL INIT FINISHED")
     while True:
+        print("CHECKING")
         file, file_name = gmail.get_most_recent_file()
         print("parsing ...")
         parser = ExcelParser(file, file_name)

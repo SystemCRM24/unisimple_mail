@@ -6,6 +6,8 @@ services:
       context: .
       dockerfile: "backend.Dockerfile"
     restart: "no"
+    environment:
+      - PYTHONUNBUFFERED=1
     depends_on:
       - "postgres"
   postgres:
