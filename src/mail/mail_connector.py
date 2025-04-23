@@ -2,7 +2,6 @@ import logging
 import imaplib
 import email
 from email.header import decode_header
-import os
 
 from src.settings import settings
 
@@ -16,13 +15,12 @@ class Gmail:
         self.imap = imaplib.IMAP4_SSL(imap_server)
         auth_response = self.imap.login(settings.imap_email, settings.imap_password)
         logger.info(auth_response)
-        self.data_folder = os.path.join(os.path.dirname(__file__), 'data')
-        os.makedirs(self.data_folder, exist_ok=True)
 
-    def get_most_recent_file(self) -> tuple[bytes, str]:
+    def get_most_recent_file(self) -> tuple[bytes, str] | None:
         """
         :return: Кортеж содержимого файла и его имени
         """
+        print("Getting most recent file...")
         self.imap.select("INBOX")  # папка входящие
         res, messages = self.imap.search(None, "ALL")
         messages = messages[0].decode('utf-8').split(" ")
@@ -40,11 +38,8 @@ class Gmail:
                             if isinstance(filename, bytes):
                                 filename = filename.decode()
                             # Полный путь к файлу
-                            filepath = os.path.join(self.data_folder, filename)
                             # Получаем содержимое вложения
                             data = part.get_payload(decode=True)
                             # Сохраняем файл
-                            with open(filepath, "wb") as f:
-                                f.write(data)
-                            print(f"Сохранено вложение: {filepath}")
+                            print(f"got {filename}")
                             return data, filename

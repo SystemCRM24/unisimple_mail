@@ -16,7 +16,7 @@ T = TypeVar("T", bound=StatePurchase)
 class ExcelParser:
     def __init__(self, file: bytes, file_name: str) -> None:
         self._df = pd.read_excel(BytesIO(file), dtype={'Номер закупки': np.str_})
-        self._extraction_dt = self._get_datetime_from_file_name(file_name)
+        self.extraction_dt = self._get_datetime_from_file_name(file_name)
 
     async def parse(self) -> list[StatePurchase]:
         """
@@ -30,17 +30,17 @@ class ExcelParser:
         :return: Список объектов `DBStatePurchase` для записи в БД
         """
         data = await self._get_records()
-        data = [{**item, "extraction_dt": self._extraction_dt} for item in data]
+        data = [{**item, "extraction_dt": self.extraction_dt} for item in data]
         return await self._bulk_validate(DBStatePurchase, data)
 
     async def _get_records(self) -> list[dict]:
         """
         :return: Список словарей, представляющих строки таблицы
         """
-        self._df['Дата подведения итогов'] = pd.to_datetime(self._df['Дата подведения итогов'], format="%d.%m.%Y",
-                                                            errors='ignore').dt.date.replace({pd.NaT: None})
-        self._df['Окончание контракта'] = pd.to_datetime(self._df['Окончание контракта'], format="%d.%m.%Y",
-                                                         errors='ignore').dt.date.replace({pd.NaT: None})
+        dt_cols = ('Дата подведения итогов', 'Окончание контракта')
+        for col in dt_cols:
+            self._df[col] = pd.to_datetime(self._df[col], format="%d.%m.%Y",
+                                                                errors='coerce').dt.date.replace({pd.NaT: None})
         self._df.replace({np.nan: None}, inplace=True)
         return self._df.to_dict(orient='records')
 

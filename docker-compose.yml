@@ -5,9 +5,9 @@ services:
     build:
       context: .
       dockerfile: "backend.Dockerfile"
-    ports:
-      - "11002:11002"
-    restart: always
+    restart: "no"
+    depends_on:
+      - "postgres"
   postgres:
     image: "postgres:17-alpine"
     restart: "always"
@@ -19,4 +19,4 @@ services:
       - "unisimple_postgres:/var/lib/postgresql/data"
       - "./src/db/init_scripts:/docker-entrypoint-initdb.d"
     ports:
-      - "${DB_PORT}:5432"
+      - "3896:5432"
