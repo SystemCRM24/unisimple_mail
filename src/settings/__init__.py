@@ -1,6 +1,7 @@
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 from pathlib import Path
+from typing import Optional
 
 from .enums import AppMode
 
@@ -20,6 +21,27 @@ class Settings(BaseSettings):
     db_host: str
     db_port: int
     mode: AppMode
+
+    test_amo_subdomain: Optional[str] = Field(None)
+    test_amo_long_term_token: Optional[str] = Field(None)
+
+    request_delay: float = Field(0.5)
+
+    @property
+    def current_amo_subdomain(self) -> str:
+        if self.mode == AppMode.TEST and self.test_amo_subdomain:
+            return self.test_amo_subdomain
+        return self.amo_subdomain
+
+    @property
+    def current_amo_long_term_token(self) -> str:
+        if self.mode == AppMode.TEST and self.test_amo_long_term_token:
+            return self.test_amo_long_term_token
+        return self.amo_long_term_token
+
+    @property
+    def is_test_mode(self) -> bool:
+        return self.mode == AppMode.TEST
 
 
 settings = Settings()
