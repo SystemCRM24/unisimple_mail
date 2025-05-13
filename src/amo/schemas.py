@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Optional, Iterable
 
-from pydantic import BaseModel, Field, EmailStr, AliasChoices, field_validator
+from pydantic import BaseModel, Field, AliasChoices, field_validator
 
 
 class StatePurchase(BaseModel):
