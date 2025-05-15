@@ -24,14 +24,26 @@ class Settings(BaseSettings):
     db_port: int
     mode: AppMode
 
-    CUSTOM_FIELD_NAME_INN_LEAD: str = "ИНН"
-    CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD: str = "Ссылка на закупку"
-    PIPELINE_NAME_GOSZAKAZ: str = "Гос.заказ - прогрев клиента"
-    STATUS_NAME_POBEDITELI: str = "Победители"
-    EXCLUDE_RESPONSIBLE_USERS: List[str] = ["Алена", "Новикова Евгения"]
-
-    CHECK_INTERVAL_SECONDS: int = 60
     MIN_LEAD_BUDGET: int = 100_000
+    PIPELINE_NAME_GOSZAKAZ: str = "Гос.заказ - прогрев клиента"
+    STATUS_NAME_POBEDITELI: str = "Победители" # Целевой этап для создания новых сделок из Excel
+    # Добавим другие нужные имена этапов, если они используются для логики
+    STATUS_NAME_KHOLODNYE_ZAYAVKI: str = "Холодные заявки" 
+    
+    CUSTOM_FIELD_NAME_INN_LEAD: str = "ИНН" # Имя поля ИНН в сделке
+    CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD: str = "Ссылка на закупку" # Имя поля Ссылки в сделке
+    CUSTOM_FIELD_NAME_INN_COMPANY: str = "ИНН" # Имя поля ИНН в компании
+    
+    EXCLUDE_RESPONSIBLE_USERS: List[str] = ["Алена", "Новикова Евгения"]
+    USER_NAME_UNSORTED_LEADS: str = "НЕРАЗОБРАННЫЕ ЗАЯВКИ" # Имя пользователя/системы для неразобр.
+    USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA: str = "Анастасия Попова" # Для задач
+    
+    # Настройки для задач
+    TASK_TEXT_NEW_LEAD_UNSORTED: str = "Новая неразобранная сделка требует внимания"
+    TASK_TEXT_NEW_WIN_EXISTING_LEAD: str = "Новая победа по существующей сделке"
+    TASK_COMPLETE_OFFSET_MINUTES: int = 10
+    TASK_TYPE_NAME_DEFAULT: str = "Связаться с клиентом" # Имя типа задачи по умолчанию
+    CHECK_INTERVAL_SECONDS: int = 60
 
     test_amo_subdomain: Optional[str] = Field(None)
     test_amo_long_term_token: Optional[str] = Field(None)

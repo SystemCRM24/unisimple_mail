@@ -34,6 +34,7 @@ class AmoClient:
     users_ids: Dict[str, int] = {}
     custom_fields_lead_ids: Dict[str, int] = {}
     custom_fields_company_ids: Dict[str, int] = {}
+    task_types_ids: Dict[str, int] = {}
 
     def __init__(self):
         self._headers = {
@@ -82,33 +83,34 @@ class AmoClient:
                 return None
 
     async def _get_all_pages(self, endpoint: str, entity_key_in_embedded: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        """Вспомогательный метод для получения всех страниц данных из API."""
-        all_data = []
+        all_data: List[Dict[str, Any]] = []
         page = 1
         while True:
             current_params = params.copy() if params else {}
             current_params['page'] = page
-            current_params['limit'] = 250
-
+            current_params['limit'] = 250 
             try:
                 response = await self._request('GET', endpoint, params=current_params)
-            except ClientResponseError:
-                logger.error(f"Failed to fetch page {page} for {endpoint} due to API error.")
-                break
+            except Exception:
+                 logger.error(f"API error or unexpected error fetching page {page} for {endpoint}. Stopping pagination.", exc_info=True)
+                 break
 
             if not response or '_embedded' not in response or entity_key_in_embedded not in response['_embedded']:
                 break
-
+            
             entities = response['_embedded'][entity_key_in_embedded]
-            if not entities:
-                break
+            if not isinstance(entities, list): # API может вернуть один объект не списком
+                if entities: all_data.append(entities)
+                else: break # Пустой ответ
+            else: # entities это список
+                if not entities: break 
+                all_data.extend(entities)
             
-            all_data.extend(entities)
-            
-            if '_links' in response and 'next' in response['_links']:
+            if response.get('_links', {}).get('next'):
                 page += 1
             else:
                 break
+        logger.debug(f"Fetched {len(all_data)} items for '{entity_key_in_embedded}' from {endpoint}")
         return all_data
 
     async def _ensure_ids_initialized(self):
@@ -137,6 +139,10 @@ class AmoClient:
                 self.custom_fields_company_ids[cf['name']] = cf['id']
             logger.info(f"Загружено {len(self.custom_fields_company_ids)} полей компаний. Примеры: {list(self.custom_fields_company_ids.keys())[:3]}")
 
+            task_types_data = await self._get_all_pages('/tasks/types', 'task_types') # entity_key для /tasks/types это 'task_types'
+            for tt in task_types_data: self.task_types_ids[tt['name']] = tt['id']
+            logger.info(f"Загружено {len(self.task_types_ids)} типов задач.")
+
             self._initialized_ids = True
             logger.info("Инициализация ID из amoCRM успешно завершена.")
         except Exception as e:
@@ -162,33 +168,31 @@ class AmoClient:
     async def get_company_custom_field_id(self, field_name: str) -> Optional[int]:
         """Возвращает ID пользовательского поля компании по его имени."""
         return self.custom_fields_company_ids.get(field_name)
+    
+    async def get_task_type_id(self, task_type_name: str) -> Optional[int]:
+        return self.task_types_ids.get(task_type_name)
 
     async def search_companies_by_inn(self, inn: str) -> List[Dict[str, Any]]:
-        """
-        Ищет компании по ИНН (пользовательское поле).
-        Возвращает список найденных компаний.
-        """
-        inn_field_id = self.custom_fields_company_ids.get(CUSTOM_FIELD_NAME_INN)
+        inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY)
         if not inn_field_id:
-            logger.warning(f"Пользовательское поле '{CUSTOM_FIELD_NAME_INN}' (ИНН) не найдено для компаний. Поиск по ИНН невозможен.")
+            logger.warning(f"Поле ИНН '{settings.CUSTOM_FIELD_NAME_INN_COMPANY}' для компаний не найдено. Поиск по ИНН невозможен.")
             return []
-
-        params = {
-            'query': inn,
-            'with': 'custom_fields'
-        }
-        companies = await self._get_all_pages('/companies', params=params)
-
+        
+        params = {'query': inn, 'with': 'custom_fields_values'} 
+        all_companies = await self._get_all_pages('/companies', entity_key_in_embedded='companies', params=params)
+        
         found_companies = []
-        for company in companies:
-            if 'custom_fields_values' in company:
-                for cf_value in company['custom_fields_values']:
-                    if cf_value['field_id'] == inn_field_id:
-                        for value in cf_value['values']:
-                            if value['value'] == inn:
+        for company in all_companies:
+            cf_values = company.get('custom_fields_values')
+            if cf_values:
+                for cf in cf_values:
+                    if cf.get('field_id') == inn_field_id:
+                        for val_entry in cf.get('values', []):
+                            if str(val_entry.get('value', '')).strip() == str(inn).strip():
                                 found_companies.append(company)
-                                break
-                        break
+                                break 
+                        break 
+        logger.debug(f"По ИНН '{inn}' найдено {len(found_companies)} компаний.")
         return found_companies
 
     async def create_company(self, name: str, inn: str) -> Optional[Dict[str, Any]]:
@@ -242,9 +246,9 @@ class AmoClient:
                 filtered_leads.append(lead)
         
         if filtered_leads:
-             logger.debug(f"Найдено {len(filtered_leads)} сделок по имени '{lead_name}' после фильтрации.")
+            logger.debug(f"Найдено {len(filtered_leads)} сделок по имени '{lead_name}' после фильтрации.")
         else:
-             logger.debug(f"Сделки по имени '{lead_name}' после фильтрации не найдены.")
+            logger.debug(f"Сделки по имени '{lead_name}' после фильтрации не найдены.")
         return filtered_leads
 
     async def create_lead(self, name: str, price: float, pipeline_id: int, status_id: int,
@@ -391,48 +395,33 @@ class AmoClient:
             return None
     
     async def create_task_for_lead(self, lead_id: int, responsible_user_id: int, text: str, 
-                                   complete_till_timestamp: int, task_type_id: Optional[int] = None) -> Optional[Dict[str, Any]]:
-        """
-        Создает задачу для сделки.
-        :param lead_id: ID сделки.
-        :param responsible_user_id: ID ответственного за задачу.
-        :param text: Текст задачи.
-        :param complete_till_timestamp: UNIX timestamp срока выполнения.
-        :param task_type_id: ID типа задачи (если не указан, используется тип по умолчанию).
-        :return: Созданная задача или None.
-        """
-        if not all([lead_id, responsible_user_id, text, complete_till_timestamp]):
-            logger.warning("Для создания задачи не хватает обязательных параметров.")
-            return None
-
+                                   complete_till_timestamp: int, task_type_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        if not all([lead_id, responsible_user_id, text, complete_till_timestamp]): return None
         payload_item: Dict[str, Any] = {
-            "responsible_user_id": responsible_user_id,
-            "entity_id": lead_id,
-            "entity_type": "leads",
-            "text": text,
-            "complete_till": complete_till_timestamp,
+            "responsible_user_id": responsible_user_id, "entity_id": lead_id,
+            "entity_type": "leads", "text": text, "complete_till": complete_till_timestamp,
         }
-        if task_type_id:
-            payload_item["task_type_id"] = task_type_id
-        else:
-            # Можно получить ID дефолтного типа задачи "Связаться с клиентом" при инициализации
-            default_task_type_id = self.task_types_ids.get("Связаться с клиентом") # Пример
-            if default_task_type_id:
-                 payload_item["task_type_id"] = default_task_type_id
-            else: # Если не нашли, API сам выберет тип по умолчанию или можно жестко задать ID (например, 1)
-                logger.debug("ID типа задачи по умолчанию не найден, task_type_id не будет установлен.")
-
-
+        if task_type_name:
+            task_type_id = self.task_types_ids.get(task_type_name)
+            if task_type_id: payload_item["task_type_id"] = task_type_id
+            else: logger.warning(f"Тип задачи '{task_type_name}' не найден, будет использован тип по умолчанию API.")
+        
         payload = [payload_item]
-        endpoint = "/tasks"
         try:
-            response = await self._request('POST', endpoint, json_data=payload)
+            response = await self._request('POST', "/tasks", json_data=payload)
             if response and '_embedded' in response and 'tasks' in response['_embedded'] and response['_embedded']['tasks']:
-                logger.info(f"Задача для сделки ID {lead_id} успешно создана.")
                 return response['_embedded']['tasks'][0]
-            else:
-                logger.error(f"Не удалось создать задачу для сделки ID {lead_id}. Ответ API: {response}")
-                return None
-        except Exception as e: # Ловим ClientResponseError и другие
-            logger.error(f"Ошибка при создании задачи для сделки ID {lead_id}: {e}", exc_info=True)
+            return None
+        except Exception: return None
+
+    async def get_lead_details(self, lead_id: int, with_relations: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        if not lead_id:
+            return None
+        endpoint = f"/leads/{lead_id}"
+        params = {}
+        if with_relations:
+            params['with'] = ",".join(with_relations)
+        try:
+            return await self._request('GET', endpoint, params=params)
+        except Exception:
             return None
