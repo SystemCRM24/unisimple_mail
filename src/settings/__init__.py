@@ -43,7 +43,7 @@ class Settings(BaseSettings):
     TASK_COMPLETE_OFFSET_MINUTES: int = 10
     TASK_TYPE_NAME_DEFAULT: str = "Связаться с клиентом"
 
-    CHECK_INTERVAL_SECONDS: int = 60
+    CHECK_INTERVAL_SECONDS: int = 3600
 
     test_amo_subdomain: Optional[str] = Field(default=None)
     test_amo_long_term_token: Optional[str] = Field(default=None)
