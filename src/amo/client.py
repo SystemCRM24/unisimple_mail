@@ -1,4 +1,3 @@
-# src/amo/client.py
 import logging
 from typing import Self, Optional, List, Dict, Any
 
@@ -9,9 +8,6 @@ from src.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Глобальные константы имен, которые вы используете в этом файле.
-# Рекомендуется их также перенести в settings для централизации.
-# CUSTOM_FIELD_NAME_INN = "ИНН" # Уже есть в settings как CUSTOM_FIELD_NAME_INN_LEAD и CUSTOM_FIELD_NAME_INN_COMPANY
 
 class AmoClient:
     _session: ClientSession
@@ -20,9 +16,9 @@ class AmoClient:
     pipelines_ids: Dict[str, int]
     statuses_ids: Dict[int, Dict[str, int]]
     users_ids: Dict[str, int]
-    custom_fields_lead_ids: Dict[str, int]  # Используется для хранения ID полей сделок {имя_поля: id}
-    custom_fields_company_ids: Dict[str, int] # Используется для хранения ID полей компаний {имя_поля: id}
-    task_types_ids: Dict[str, int] # Будет пустым, если /tasks/types не работает
+    custom_fields_lead_ids: Dict[str, int]
+    custom_fields_company_ids: Dict[str, int]
+    task_types_ids: Dict[str, int]
 
     def __init__(self):
         self._headers = {
@@ -30,18 +26,16 @@ class AmoClient:
             'Content-Type': 'application/json'
         }
         self._base_url = f"https://{settings.current_amo_subdomain}.amocrm.ru/api/{self._API_VERSION}"
-        # Расчет лимита запросов на основе settings.request_delay
-        rate = 1.0 / settings.request_delay if settings.request_delay > 0 else 2.0 # 2 запроса в секунду по умолчанию
+        rate = 1.0 / settings.request_delay if settings.request_delay > 0 else 2.0
         self._rate_limit = AsyncLimiter(max_rate=rate, time_period=1)
         self._initialized_ids = False
-        
+
         self.pipelines_ids = {}
         self.statuses_ids = {}
         self.users_ids = {}
         self.custom_fields_lead_ids = {} 
         self.custom_fields_company_ids = {}
         self.task_types_ids = {}
-
 
     async def __aenter__(self) -> Self:
         self._session = ClientSession(headers=self._headers, trust_env=True)
@@ -58,13 +52,16 @@ class AmoClient:
         async with self._rate_limit:
             try:
                 kwargs = {}
-                if json_data: kwargs['json'] = json_data
-                if params: kwargs['params'] = params
+                if json_data:
+                    kwargs['json'] = json_data
+                if params:
+                    kwargs['params'] = params
                 logger.debug(f"AmoAPI Request: {method} {full_url} | Params: {params} | JSON: {json_data is not None}")
                 async with self._session.request(method, full_url, **kwargs) as response:
                     logger.debug(f"AmoAPI Response Status: {response.status} for {full_url}")
                     if 200 <= response.status < 300:
-                        if response.status == 204: return None
+                        if response.status == 204:
+                            return None
                         return await response.json()
                     else:
                         response_text = await response.text()
@@ -78,7 +75,7 @@ class AmoClient:
             except Exception as e:
                 logger.error(f"Unexpected error during request to {full_url}: {e}", exc_info=True)
                 raise
-        return None # В случае проброса исключения эта строка не будет достигнута
+        return None
 
     async def _get_all_pages(self, endpoint: str, entity_key_in_embedded: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         all_data: List[Dict[str, Any]] = []
@@ -97,15 +94,18 @@ class AmoClient:
                 if page == 1 and response and '_embedded' in response and not response['_embedded'].get(entity_key_in_embedded):
                     logger.debug(f"No entities '{entity_key_in_embedded}' found on first page for {endpoint}.")
                 break
-            
+
             entities = response['_embedded'][entity_key_in_embedded]
             if not isinstance(entities, list):
-                if entities: all_data.append(entities)
-                else: break 
-            else: 
-                if not entities: break 
+                if entities:
+                    all_data.append(entities)
+                else:
+                    break 
+            else:
+                if not entities:
+                    break 
                 all_data.extend(entities)
-            
+
             if response.get('_links', {}).get('next'):
                 page += 1
             else:
@@ -114,25 +114,27 @@ class AmoClient:
         return all_data
 
     async def _ensure_ids_initialized(self):
-        if self._initialized_ids: return
+        if self._initialized_ids:
+            return
         logger.info("Инициализация справочников ID из amoCRM...")
         try:
             pipelines_data = await self._get_all_pages('/leads/pipelines', 'pipelines')
             for p in pipelines_data:
                 self.pipelines_ids[p['name']] = p['id']
                 self.statuses_ids[p['id']] = {s['name']: s['id'] for s in p.get('_embedded', {}).get('statuses', [])}
-            
+
             users_data = await self._get_all_pages('/users', 'users')
-            for u in users_data: self.users_ids[u['name']] = u['id']
+            for u in users_data:
+                self.users_ids[u['name']] = u['id']
 
             lead_fields_data = await self._get_all_pages('/leads/custom_fields', 'custom_fields')
-            for cf in lead_fields_data: self.custom_fields_lead_ids[cf['name']] = cf['id']
-            
-            company_fields_data = await self._get_all_pages('/companies/custom_fields', 'custom_fields')
-            for cf in company_fields_data: self.custom_fields_company_ids[cf['name']] = cf['id']
+            for cf in lead_fields_data:
+                self.custom_fields_lead_ids[cf['name']] = cf['id']
 
-            # Загрузка типов задач: эндпоинт /api/v4/tasks/types не работает.
-            # Оставляем self.task_types_ids пустым.
+            company_fields_data = await self._get_all_pages('/companies/custom_fields', 'custom_fields')
+            for cf in company_fields_data:
+                self.custom_fields_company_ids[cf['name']] = cf['id']
+
             self.task_types_ids = {}
             logger.info("Загрузка типов задач пропущена (эндпоинт /api/v4/tasks/types недоступен).")
 
@@ -151,12 +153,12 @@ class AmoClient:
     async def get_user_id(self, user_name: str) -> Optional[int]:
         return self.users_ids.get(user_name)
 
-    async def get_custom_field_id_lead(self, field_name: str) -> Optional[int]: # Был get_custom_field_id
-        return self.custom_fields_lead_ids.get(field_name) # Использовал custom_fields_ids
+    async def get_custom_field_id_lead(self, field_name: str) -> Optional[int]:
+        return self.custom_fields_lead_ids.get(field_name)
 
-    async def get_custom_field_id_company(self, field_name: str) -> Optional[int]: # Был get_company_custom_field_id
+    async def get_custom_field_id_company(self, field_name: str) -> Optional[int]:
         return self.custom_fields_company_ids.get(field_name)
-    
+
     async def get_task_type_id(self, task_type_name: str) -> Optional[int]:
         return self.task_types_ids.get(task_type_name)
 
@@ -192,15 +194,15 @@ class AmoClient:
         company_data: Dict[str, Any] = {"name": name}
         cf_values_payload = []
         if inn:
-            # Используем имя поля из settings для получения ID
             inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY) 
             if inn_field_id:
                 cf_values_payload.append({"field_id": inn_field_id, "values": [{"value": str(inn)}]})
             else:
                 logger.warning(f"ID для поля ИНН '{settings.CUSTOM_FIELD_NAME_INN_COMPANY}' компании не найден. ИНН не будет установлен для '{name}'.")
-        
-        if cf_values_payload: company_data["custom_fields_values"] = cf_values_payload
-        
+
+        if cf_values_payload:
+            company_data["custom_fields_values"] = cf_values_payload
+
         payload_list = [company_data]
         try:
             response = await self._request('POST', '/companies', json_data=payload_list)
@@ -209,12 +211,13 @@ class AmoClient:
                 logger.info(f"Создана компания '{name}' (ID: {created_company.get('id')}).")
                 return created_company
             return None
-        except Exception: return None
+        except Exception:
+            return None
 
     async def search_leads_by_name(self, pipeline_id: int, purchase_number:str, excluded_user_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
         params = {'query': purchase_number, 'filter[pipeline_id]': pipeline_id, 'with': 'responsible_user'}
         all_leads = await self._get_all_pages('/leads', entity_key_in_embedded='leads', params=params)
-        
+
         purchase_number_field_id = self.custom_fields_lead_ids.get(settings.CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD)
         filtered_leads = []
         for lead in all_leads:
@@ -225,103 +228,112 @@ class AmoClient:
                             if str(value['value']).split()[0] == purchase_number:
                                 filtered_leads.append(lead)
                                 break
-            # if lead.get('name', '').strip().lower() != lead_name.strip().lower(): continue
             if excluded_user_ids and lead.get('responsible_user_id') in excluded_user_ids: continue
-            # filtered_leads.append(lead)
         return filtered_leads
-    
+
     async def get_lead_details(self, lead_id: int, with_relations: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        if not lead_id: return None
+        if not lead_id:
+            return None
         endpoint = f"/leads/{lead_id}"
         params = {}
-        if with_relations: params['with'] = ",".join(with_relations)
+        if with_relations:
+            params['with'] = ",".join(with_relations)
         try:
             return await self._request('GET', endpoint, params=params)
-        except Exception: return None
+        except Exception:
+            return None
 
-    # Метод create_lead из вашего последнего client.py
     async def create_lead(self, name: str, price: float, pipeline_id: int, status_id: int,
                           company_inn: Optional[str] = None, 
                           responsible_user_id: Optional[int] = None,
                           custom_fields: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         company_id_to_link: Optional[int] = None
         if company_inn:
-            # Требование: "компания всегда должна создаваться при создании сделки"
             logger.info(f"Создание НОВОЙ компании для сделки '{name}' с ИНН: {company_inn} (согласно ТЗ).")
-            created_company = await self.create_company(name=name, inn=str(company_inn)) # Имя компании = имя сделки
+            created_company = await self.create_company(name=name, inn=str(company_inn))
             if created_company:
                 company_id_to_link = created_company.get('id')
             else:
                 logger.warning(f"Не удалось создать НОВУЮ компанию для сделки '{name}' (ИНН: {company_inn}). Сделка будет создана без привязки к компании.")
-        
+
         lead_data: Dict[str, Any] = {
             "name": name, "price": int(price),
             "pipeline_id": pipeline_id, "status_id": status_id,
         }
-        if responsible_user_id: lead_data["responsible_user_id"] = responsible_user_id
-        
+        if responsible_user_id:
+            lead_data["responsible_user_id"] = responsible_user_id
+
         cf_values_payload = []
-        if custom_fields: # custom_fields это {имя_поля_из_settings: значение}
+        if custom_fields:
             for field_name_from_settings, value in custom_fields.items():
                 field_id = self.custom_fields_lead_ids.get(field_name_from_settings) 
                 if field_id:
                     cf_values_payload.append({"field_id": field_id, "values": [{"value": str(value)}]})
                 else:
                     logger.warning(f"ID для custom_fields сделки '{field_name_from_settings}' не найден. Поле не будет установлено.")
-        if cf_values_payload: lead_data["custom_fields_values"] = cf_values_payload
-        
+        if cf_values_payload:
+            lead_data["custom_fields_values"] = cf_values_payload
+
         _embedded_data = {}
-        if company_id_to_link: _embedded_data["companies"] = [{"id": company_id_to_link}]
-        if _embedded_data: lead_data["_embedded"] = _embedded_data
-        
+        if company_id_to_link:
+            _embedded_data["companies"] = [{"id": company_id_to_link}]
+        if _embedded_data:
+            lead_data["_embedded"] = _embedded_data
+
         payload_list = [lead_data]
         try:
             response = await self._request('POST', '/leads', json_data=payload_list)
             if response and '_embedded' in response and 'leads' in response['_embedded'] and response['_embedded']['leads']:
                 return response['_embedded']['leads'][0]
             return None
-        except Exception: return None
+        except Exception:
+            return None
 
     async def add_note_to_lead(self, lead_id: int, note_text: str, note_type: str = "common") -> Optional[Dict[str, Any]]:
-        if not lead_id or not note_text: return None
+        if not lead_id or not note_text:
+            return None
         payload = [{"note_type": note_type, "params": {"text": note_text}}]
         try:
             response = await self._request('POST', f"/leads/{lead_id}/notes", json_data=payload)
             if response and '_embedded' in response and 'notes' in response['_embedded'] and response['_embedded']['notes']:
                 return response['_embedded']['notes'][0]
             return None
-        except Exception: return None
-            
+        except Exception:
+            return None
+
     async def update_lead(self, lead_id: int, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not lead_id or not payload: return None
+        if not lead_id or not payload:
+            return None
         try:
             response = await self._request('PATCH', f"/leads/{lead_id}", json_data=payload)
-            if response and response.get('id') == lead_id: return response
+            if response and response.get('id') == lead_id:
+                return response
             return None
-        except Exception: return None
-    
+        except Exception:
+            return None
+
     async def create_task_for_lead(self, lead_id: int, responsible_user_id: int, text: str, 
                                    complete_till_timestamp: int, task_type_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        if not all([lead_id, responsible_user_id, text, complete_till_timestamp]): return None
+        if not all([lead_id, responsible_user_id, text, complete_till_timestamp]):
+            return None
         payload_item: Dict[str, Any] = {
             "responsible_user_id": responsible_user_id, "entity_id": lead_id,
             "entity_type": "leads", "text": text, "complete_till": complete_till_timestamp,
         }
-        
+
         task_type_to_use_name = task_type_name if task_type_name else settings.TASK_TYPE_NAME_DEFAULT
-        task_type_id = self.task_types_ids.get(task_type_to_use_name) # Будет None, если не загружены
-        
+        task_type_id = self.task_types_ids.get(task_type_to_use_name)
+
         if task_type_id:
             payload_item["task_type_id"] = task_type_id
         else:
             logger.warning(f"Тип задачи '{task_type_to_use_name}' не найден по имени. API использует тип по умолчанию (или может вернуть ошибку, если тип обязателен и дефолта нет).")
-            # Если API требует task_type_id, можно установить известный ID дефолтного типа, например, 1.
-            # payload_item["task_type_id"] = 1 # Пример
-        
+
         payload = [payload_item]
         try:
             response = await self._request('POST', "/tasks", json_data=payload)
             if response and '_embedded' in response and 'tasks' in response['_embedded'] and response['_embedded']['tasks']:
                 return response['_embedded']['tasks'][0]
             return None
-        except Exception: return None
+        except Exception:
+            return None

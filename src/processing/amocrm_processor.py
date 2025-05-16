@@ -1,4 +1,3 @@
-# src/processing/amocrm_processor.py
 import logging
 from typing import List, Dict, Any, Optional
 from datetime import date, datetime, timezone, timedelta
@@ -9,15 +8,17 @@ from src.settings import settings
 
 logger = logging.getLogger(__name__)
 
+
 def format_value(value: Any) -> str:
-    if value is None: return "не указано"
+    if value is None:
+        return "не указано"
     if isinstance(value, date): return value.strftime('%d.%m.%Y')
     if isinstance(value, (float, int)):
         return str(int(value)) if float(value).is_integer() else f"{float(value):.2f}"
     return str(value)
 
+
 def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
-    # ... (эта функция остается без изменений, как в вашем файле amocrm_processor.py #2)
     note_lines = [
         f"Ссылка на закупку: {format_value(purchase_data.eis_url)}",
         f"Наименование победителя: {format_value(purchase_data.winner_name)}",
@@ -54,20 +55,18 @@ def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
 async def _create_task(
     amo_client: AmoClient,
     lead_id: int,
-    lead_info_for_task: Dict[str, Any], # Ожидаем {'name': str, 'responsible_user_id': Optional[int]}
+    lead_info_for_task: Dict[str, Any],
     is_new_lead: bool,
     purchase_number_for_task: str,
     id_user_anastasia_popova: Optional[int],
     id_user_unsorted: Optional[int]
 ):
     task_responsible_id: Optional[int] = None
-    # Текст задачи из ТЗ: "Пришло обновление из базы победителей"
     task_text = f"{settings.TASK_TEXT_NEW_TENDER_WIN}"
     
     actual_lead_responsible_id = lead_info_for_task.get('responsible_user_id')
 
-    if is_new_lead: # Для новых сделок, ответственный мог быть назначен по умолчанию
-        # Если actual_lead_responsible_id (из create_lead ответа) это id_user_unsorted или None
+    if is_new_lead:
         if actual_lead_responsible_id == id_user_unsorted or actual_lead_responsible_id is None:
             if id_user_anastasia_popova:
                 task_responsible_id = id_user_anastasia_popova
@@ -75,29 +74,30 @@ async def _create_task(
             else:
                 logger.warning(f"Новая сделка ID {lead_id} не разобрана, но ID '{settings.USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA}' не найден. Задача не поставлена.")
                 return
-        elif actual_lead_responsible_id: # Новая сделка, но ответственный уже есть (не "Неразобранные")
+        elif actual_lead_responsible_id:
             task_responsible_id = actual_lead_responsible_id
             logger.info(f"Новая сделка ID {lead_id} с ответственным ID {actual_lead_responsible_id}. Задача на него.")
-        else: # Не удалось определить ответственного для новой сделки, fallback на Попову
+        else:
             if id_user_anastasia_popova:
                 task_responsible_id = id_user_anastasia_popova
                 logger.warning(f"Ответственный для новой сделки ID {lead_id} не определен. Задача будет поставлена на '{settings.USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA}'.")
-            else: return
-    else: # Существующая сделка (is_new_lead == False)
-        if actual_lead_responsible_id and actual_lead_responsible_id != id_user_unsorted : # Есть конкретный ответственный
+            else:
+                return
+    else:
+        if actual_lead_responsible_id and actual_lead_responsible_id != id_user_unsorted:
             task_responsible_id = actual_lead_responsible_id
             logger.info(f"Новая победа для существующей сделки ID {lead_id} с ответственным ID {actual_lead_responsible_id}. Задача на него.")
-        else: # Ответственный не проставлен или "Неразобранные"
+        else:
             if id_user_anastasia_popova:
                 task_responsible_id = id_user_anastasia_popova
                 logger.info(f"Новая победа для существующей сделки ID {lead_id}, но ответственный не проставлен/неразобран. Задача на '{settings.USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA}'.")
             else:
                 logger.warning(f"Ответственный для существующей сделки ID {lead_id} не проставлен, и ID '{settings.USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA}' не найден. Задача не поставлена.")
                 return
-    
+
     if task_responsible_id:
         complete_till = int((datetime.now(timezone.utc) + timedelta(minutes=settings.TASK_COMPLETE_OFFSET_MINUTES)).timestamp())
-        
+
         created_task = await amo_client.create_task_for_lead(
             lead_id, task_responsible_id, task_text, complete_till,
             task_type_name=settings.TASK_TYPE_NAME_DEFAULT
@@ -131,17 +131,15 @@ async def _handle_lead_processing(
     if not deal_name:
         logger.warning(f"Пропуск (нет имени победителя): закупка '{purchase_data.purchase_number}'")
         return
-        
+
     logger.info(f"Обработка: '{deal_name}' (Закупка: {purchase_data.purchase_number}, ИНН: {purchase_data.inn})")
 
-    # Фильтрация создания сделок (ТЗ п.9)
     if purchase_data.inn and exclude_user_ids_for_creation_filter:
-        # Ищем компании, связанные с этим ИНН
         existing_companies = await amo_client.search_companies_by_inn(str(purchase_data.inn))
         for comp in existing_companies:
             if comp.get('responsible_user_id') in exclude_user_ids_for_creation_filter:
                 logger.info(f"Победитель '{deal_name}' (ИНН: {purchase_data.inn}) через компанию '{comp.get('name')}' (ID: {comp.get('id')}) уже закреплен за исключенным менеджером. Новая сделка создаваться не будет.")
-                return 
+                return
 
     found_leads = await amo_client.search_leads_by_name(
         pipeline_id=pipeline_id,
@@ -156,7 +154,7 @@ async def _handle_lead_processing(
         current_lead_id = lead_info.get('id')
         lead_current_responsible_id = lead_info.get('responsible_user_id')
         lead_current_budget = float(lead_info.get('price', 0.0))
-        lead_info_for_task["responsible_user_id"] = lead_current_responsible_id # Для задачи
+        lead_info_for_task["responsible_user_id"] = lead_current_responsible_id
         logger.info(f"Найдена существующая сделка: '{deal_name}' (ID: {current_lead_id}, отв.: {lead_current_responsible_id}, бюджет: {lead_current_budget})")
 
         new_budget_from_excel = purchase_data.contract_securing
@@ -166,33 +164,34 @@ async def _handle_lead_processing(
             if new_budget_float != 0.0:
                 if new_budget_float != lead_current_budget:
                     payload_update_lead["price"] = int(new_budget_float)
-            
-            if payload_update_lead: # Только если есть что обновить в бюджете
-                budget_changed_during_update = True # Флаг, что бюджет менялся
-                # `updated_at` будет установлен ниже, после добавления примечания, чтобы гарантировать "поднятие"
+
+            if payload_update_lead:
+                budget_changed_during_update = True
     else:
         is_new_lead = True
         logger.info(f"Сделка для '{deal_name}' не найдена. Создание новой.")
-        
+
         custom_fields_for_creation: Dict[str, Any] = {}
         if purchase_data.inn:
-            # Передаем имя поля из settings, AmoClient.create_lead найдет ID
             custom_fields_for_creation[settings.CUSTOM_FIELD_NAME_INN_LEAD] = str(purchase_data.inn)
-        
+
         purchase_link_value = ""
-        if purchase_data.purchase_number and purchase_data.eis_url: purchase_link_value = f"{purchase_data.purchase_number} {purchase_data.eis_url}"
-        elif purchase_data.eis_url: purchase_link_value = purchase_data.eis_url
-        elif purchase_data.purchase_number: purchase_link_value = f"Номер закупки: {purchase_data.purchase_number}"
-        
+        if purchase_data.purchase_number and purchase_data.eis_url:
+            purchase_link_value = f"{purchase_data.purchase_number} {purchase_data.eis_url}"
+        elif purchase_data.eis_url:
+            purchase_link_value = purchase_data.eis_url
+        elif purchase_data.purchase_number:
+            purchase_link_value = f"Номер закупки: {purchase_data.purchase_number}"
+
         if purchase_link_value:
             custom_fields_for_creation[settings.CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD] = purchase_link_value
 
         price_for_amo = float(purchase_data.contract_securing) if purchase_data.contract_securing is not None else 0.0
-        
+
         created_lead_data = await amo_client.create_lead(
             name=deal_name, price=price_for_amo, pipeline_id=pipeline_id, status_id=target_status_id,
             company_inn=str(purchase_data.inn) if purchase_data.inn else None,
-            custom_fields=custom_fields_for_creation if custom_fields_for_creation else None, # Исправлено имя аргумента
+            custom_fields=custom_fields_for_creation if custom_fields_for_creation else None,
             responsible_user_id=id_user_unsorted 
         )
 
@@ -209,27 +208,25 @@ async def _handle_lead_processing(
     if current_lead_id:
         note_text = generate_note_text_for_win(purchase_data)
         added_note = await amo_client.add_note_to_lead(current_lead_id, note_text)
-        
+
         payload_for_final_update: Dict[str, Any] = {"updated_at": int(datetime.now(timezone.utc).timestamp())}
-        if budget_changed_during_update and "price" in locals().get("payload_update_lead", {}): # Если бюджет менялся
+        if budget_changed_during_update and "price" in locals().get("payload_update_lead", {}):
             payload_for_final_update["price"] = locals()["payload_update_lead"]["price"]
-        
+
         await amo_client.update_lead(current_lead_id, payload_for_final_update)
         if "price" in payload_for_final_update:
             logger.info(f"Сделка ID {current_lead_id} обновлена (бюджет и/или updated_at) и перемещена вверх.")
         else:
             logger.info(f"Сделка ID {current_lead_id} перемещена вверх (updated_at).")
-        
+
         await _create_task(
-            amo_client, current_lead_id, 
-            lead_info_for_task, # Передаем словарь с name и responsible_user_id
+            amo_client, current_lead_id,
+            lead_info_for_task,
             is_new_lead, str(purchase_data.purchase_number),
             id_user_anastasia_popova, id_user_unsorted
-            # purchase_data убран, т.к. purchase_number и winner_name передаются отдельно
         )
 
-# process_parsed_data_for_amocrm остается таким же, как в вашем файле amocrm_processor.py (v2)
-# только убедитесь, что exclude_user_ids и другие ID передаются в _handle_lead_processing
+
 async def process_parsed_data_for_amocrm(
     amo_client: AmoClient,
     parsed_purchases: List[DBStatePurchase]
@@ -237,7 +234,7 @@ async def process_parsed_data_for_amocrm(
     logger.info(f"--- Запуск обработки {len(parsed_purchases)} записей для amoCRM ---")
     try:
         await amo_client._ensure_ids_initialized()
-    except RuntimeError: # Ловим ошибку инициализации ID
+    except RuntimeError:
         logger.critical("Сбой инициализации ID amoCRM. Обработка остановлена.")
         return
 
@@ -245,18 +242,19 @@ async def process_parsed_data_for_amocrm(
     if settings.EXCLUDE_RESPONSIBLE_USERS:
         for user_name in settings.EXCLUDE_RESPONSIBLE_USERS:
             user_id = await amo_client.get_user_id(user_name) 
-            if user_id: exclude_user_ids_for_filter.append(user_id)
-            else: logger.warning(f"Пользователь '{user_name}' для исключения не найден.")
-    
+            if user_id:
+                exclude_user_ids_for_filter.append(user_id)
+            else:
+                logger.warning(f"Пользователь '{user_name}' для исключения не найден.")
+
     pipeline_id = await amo_client.get_pipeline_id(settings.PIPELINE_NAME_GOSZAKAZ)
-    if not pipeline_id: 
+    if not pipeline_id:
         logger.error(f"Воронка '{settings.PIPELINE_NAME_GOSZAKAZ}' не найдена."); return
 
     target_status_id = await amo_client.get_status_id(pipeline_id, settings.STATUS_NAME_POBEDITELI)
     if not target_status_id: 
         logger.error(f"Этап '{settings.STATUS_NAME_POBEDITELI}' в воронке '{settings.PIPELINE_NAME_GOSZAKAZ}' не найден."); return
-    
-    # Получаем ID пользователей для логики задач
+
     id_anastasia_popova = await amo_client.get_user_id(settings.USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA)
     id_unsorted_leads = await amo_client.get_user_id(settings.USER_NAME_UNSORTED_LEADS)
 
@@ -275,5 +273,5 @@ async def process_parsed_data_for_amocrm(
             )
         except Exception as e:
             logger.error(f"Критическая ошибка при полной обработке записи '{getattr(purchase_data, 'purchase_number', 'N/A')}': {e}", exc_info=True)
-            
+
     logger.info(f"--- Обработка для amoCRM {len(parsed_purchases)} записей завершена ---")

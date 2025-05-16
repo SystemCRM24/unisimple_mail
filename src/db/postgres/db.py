@@ -102,6 +102,7 @@ class PostgresDB(DB):
             database=settings.db_name,
             user=settings.db_user,
             password=settings.db_password,
+            client_encoding='utf8',
         )
 
     async def _close_connection(self):

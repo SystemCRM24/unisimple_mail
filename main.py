@@ -1,11 +1,15 @@
+import sys
 import imaplib
 import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
 
+
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from src.amo.client import AmoClient
-from src.amo.schemas import DBStatePurchase
 from src.db import PostgresDB
 from src.mail.file_parser import ExcelParser
 from src.mail.mail_connector import Gmail
@@ -67,12 +71,12 @@ async def main():
               
                         parsed_data_for_db = await parser.parse_for_db()
 
-                        # if parsed_data_for_db:
-                        #     async with PostgresDB() as db:
-                        #         await db.write_purchases(parsed_data_for_db)
-                        #     logger.info(f"Записано {len(parsed_data_for_db)} записей в БД из файла '{file_name}'.")
-                        # else:
-                        #     logger.warning(f"Нет данных для записи в БД из файла '{file_name}'.")
+                        if parsed_data_for_db:
+                            async with PostgresDB() as db:
+                                await db.write_purchases(parsed_data_for_db)
+                            logger.info(f"Записано {len(parsed_data_for_db)} записей в БД из файла '{file_name}'.")
+                        else:
+                            logger.warning(f"Нет данных для записи в БД из файла '{file_name}'.")
 
                         if parsed_data_for_db:
                             async with AmoClient() as amo_client_instance:
