@@ -10,6 +10,16 @@ logger = logging.getLogger(__name__)
 
 
 def format_value(value: Any) -> str:
+    """
+    Форматирует значение для отображения в примечании.
+
+    Args:
+        value: Входное значение любого типа.
+    Returns:
+        Отформатированная строка ('не указано' для None, дата в формате dd.mm.yyyy,
+        числа без десятичных знаков если целое или с двумя знаками после запятой,
+        остальные типы преобразуются в строку).
+    """
     if value is None:
         return "не указано"
     if isinstance(value, date): return value.strftime('%d.%m.%Y')
@@ -19,6 +29,14 @@ def format_value(value: Any) -> str:
 
 
 def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
+    """
+    Генерирует форматированный текст примечания для сделки о выигрыше в закупке.
+
+    Args:
+        purchase_data: Объект DBStatePurchase с данными о закупке.
+    Returns:
+        Многострочная строка, содержащая информацию о закупке и победителе.
+    """
     note_lines = [
         f"Ссылка на закупку: {format_value(purchase_data.eis_url)}",
         f"Наименование победителя: {format_value(purchase_data.winner_name)}",
@@ -61,6 +79,23 @@ async def _create_task(
     id_user_anastasia_popova: Optional[int],
     id_user_unsorted: Optional[int]
 ):
+    """
+    Создает задачу в amoCRM для указанной сделки.
+
+    Определяет ответственного за задачу исходя из того, является ли сделка новой
+    и назначен ли у нее ответственный менеджер или статус "Неразобранное".
+
+    Args:
+        amo_client: Экземпляр клиента AmoClient.
+        lead_id: ID сделки, к которой привязывается задача.
+        lead_info_for_task: Словарь с информацией о сделке.
+        is_new_lead: Флаг, указывающий, является ли сделка новой (только что созданной).
+        purchase_number_for_task: Номер закупки для включения в текст задачи.
+        id_user_anastasia_popova: ID пользователя "Анастасия Попова".
+        id_user_unsorted: ID пользователя "Неразобранные заявки".
+    Returns:
+        None.
+    """
     task_responsible_id: Optional[int] = None
     task_text = f"{settings.TASK_TEXT_NEW_TENDER_WIN}"
     
@@ -117,6 +152,22 @@ async def _handle_lead_processing(
     id_user_anastasia_popova: Optional[int],
     id_user_unsorted: Optional[int]
 ):
+    """
+    Обрабатывает одну запись о закупке: ищет существующую сделку, создает новую при необходимости,
+    создает или находит компанию, привязывает компанию к сделке, добавляет примечание и создает задачу.
+
+    Args:
+        amo_client: Экземпляр клиента AmoClient.
+        purchase_data: Объект DBStatePurchase с данными о закупке.
+        pipeline_id: ID целевой воронки.
+        target_status_id: ID целевого статуса в воронке.
+        exclude_user_ids_for_creation_filter: Список ID пользователей, закрепленные компании за которыми
+                                             исключают создание новой сделки.
+        id_user_anastasia_popova: ID пользователя "Анастасия Попова".
+        id_user_unsorted: ID пользователя "Неразобранное".
+    Returns:
+        None.
+    """
     current_lead_id: Optional[int] = None
     is_new_lead = False
     lead_current_responsible_id: Optional[int] = None
@@ -231,6 +282,19 @@ async def process_parsed_data_for_amocrm(
     amo_client: AmoClient,
     parsed_purchases: List[DBStatePurchase]
 ):
+    """
+    Основная функция для обработки списка данных о выигранных закупках и синхронизации их с amoCRM.
+
+    Инициализирует необходимые справочники (воронки, статусы, пользователи, поля),
+    затем итерируется по каждой записи о закупке и вызывает функцию обработки
+    отдельной сделки (_handle_lead_processing).
+
+    Args:
+        amo_client: Экземпляр клиента AmoClient.
+        parsed_purchases: Список объектов DBStatePurchase, содержащих данные о выигранных закупках.
+    Returns:
+        None.
+    """
     logger.info(f"--- Запуск обработки {len(parsed_purchases)} записей для amoCRM ---")
     try:
         await amo_client._ensure_ids_initialized()

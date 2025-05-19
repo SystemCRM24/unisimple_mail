@@ -10,6 +10,10 @@ logger = logging.getLogger(__name__)
 
 
 class AmoClient:
+    """
+    Клиент для взаимодействия с API amoCRM.
+
+    """
     _session: ClientSession
     _API_VERSION = "v4"
 
@@ -38,16 +42,41 @@ class AmoClient:
         self.task_types_ids = {}
 
     async def __aenter__(self) -> Self:
+        """
+        Входит в асинхронный контекст.
+
+        Создает сессию aiohttp и выполняет инициализацию справочников ID.
+
+        Returns:
+            Экземпляр клиента AmoClient.
+        """
         self._session = ClientSession(headers=self._headers, trust_env=True)
         await self._ensure_ids_initialized()
         return self
 
     async def __aexit__(self, *args) -> None:
+        """
+        Выходит из асинхронного контекста. 
+        """
         if self._session and not self._session.closed:
             await self._session.close()
 
     async def _request(self, method: str, url: str, json_data: Optional[Dict[str, Any]] = None,
                        params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Выполняет асинхронный HTTP-запрос к API.
+
+        Args:
+            method: HTTP-метод запроса.
+            url: Часть URL-пути после базового URL.
+            json_data: Словарь с данными для отправки в теле запроса в формате JSON.
+            params: Словарь с параметрами для добавления к URL в виде query string.
+        Returns:
+            В случае успешного выполнения запроса (статус 2xx, кроме 204)
+            возвращает словарь с JSON-ответом от сервера.
+            В случае ошибки (статус 4xx или 5xx) или другого исключения,
+            логирует ошибку и вызывает исключение повторно.
+        """
         full_url = f"{self._base_url}{url}"
         async with self._rate_limit:
             try:
@@ -78,6 +107,16 @@ class AmoClient:
         return None
 
     async def _get_all_pages(self, endpoint: str, entity_key_in_embedded: str, params: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """
+        Собирает данные со всех страниц с учетом пагинации.
+        Args:
+            endpoint: Эндпоинт API (например, '/leads').
+            entity_key_in_embedded: Ключ в словаре '_embedded' ответа,
+                                    содержащий список сущностей (например, 'leads').
+            params: Дополнительные параметры запроса.
+        Returns:
+            Список словарей, представляющих все сущности, полученные со всех страниц.
+        """
         all_data: List[Dict[str, Any]] = []
         page = 1
         while True:
@@ -114,6 +153,11 @@ class AmoClient:
         return all_data
 
     async def _ensure_ids_initialized(self):
+        """
+        Проверяет, были ли инициализированы ID справочников, и если нет,
+        загружает их из API и кэширует.
+
+        """
         if self._initialized_ids:
             return
         logger.info("Инициализация справочников ID из amoCRM...")
@@ -145,27 +189,80 @@ class AmoClient:
             raise RuntimeError(f"Failed to initialize IDs from AmoCRM: {e}")
 
     async def get_pipeline_id(self, pipeline_name: str) -> Optional[int]:
+        """
+        Возвращает ID воронки по ее имени.
+
+        Args:
+            pipeline_name: Имя воронки.
+        Returns:
+            Целочисленный ID воронки или None, если воронка не найдена.
+        """
         return self.pipelines_ids.get(pipeline_name)
 
     async def get_status_id(self, pipeline_id: int, status_name: str) -> Optional[int]:
+        """
+        Возвращает ID статуса сделки по ID воронки и имени статуса.
+
+        Args:
+            pipeline_id: ID воронки.
+            status_name: Имя статуса.
+        Returns:
+            Целочисленный ID статуса или None, если воронка или статус не найдены.
+        """
         return self.statuses_ids.get(pipeline_id, {}).get(status_name)
 
     async def get_user_id(self, user_name: str) -> Optional[int]:
+        """
+        Возвращает ID пользователя по его имени.
+
+        Args:
+            user_name: Имя пользователя.
+        Returns:
+            Целочисленный ID пользователя или None, если пользователь не найден.
+        """
         return self.users_ids.get(user_name)
 
     async def get_custom_field_id_lead(self, field_name: str) -> Optional[int]:
+        """
+        Возвращает ID пользовательского поля для сделок по его имени.
+
+        Args:
+            field_name: Имя пользовательского поля.
+        Returns:
+            Целочисленный ID поля или None, если поле не найдено.
+        """
         return self.custom_fields_lead_ids.get(field_name)
 
     async def get_custom_field_id_company(self, field_name: str) -> Optional[int]:
+        """
+        Возвращает ID пользовательского поля для компаний по его имени.
+
+        Args:
+            field_name: Имя пользовательского поля.
+        Returns:
+            Целочисленный ID поля или None, если поле не найдено.
+        """
         return self.custom_fields_company_ids.get(field_name)
 
     async def get_task_type_id(self, task_type_name: str) -> Optional[int]:
+        """
+        Возвращает ID типа задачи по его имени.
+
+        Args:
+            task_type_name: Имя типа задачи.
+        Returns:
+            Целочисленный ID типа задачи или None, если тип задачи не найден.
+        """
         return self.task_types_ids.get(task_type_name)
 
     async def search_companies_by_inn(self, inn: str) -> List[Dict[str, Any]]:
         """
         Ищет компании по ИНН (пользовательское поле).
         Возвращает список найденных компаний.
+        Args:
+            inn: Значение ИНН для поиска.
+        Returns:
+            Список словарей, представляющих найденные компании.
         """
         inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY)
         if not inn_field_id:
@@ -191,6 +288,15 @@ class AmoClient:
         return found_companies
 
     async def create_company(self, name: str, inn: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Создает новую компанию в amoCRM.
+
+        Args:
+            name: Название компании.
+            inn: Значение ИНН компании.
+        Returns:
+            Словарь, представляющий созданную компанию, или None в случае ошибки.
+        """
         company_data: Dict[str, Any] = {"name": name}
         cf_values_payload = []
         if inn:
@@ -215,6 +321,17 @@ class AmoClient:
             return None
 
     async def search_leads_by_name(self, pipeline_id: int, purchase_number:str, excluded_user_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+        """
+        Ищет сделки в конкретной воронке по номеру закупки
+        и исключает сделки с определенными ответственными пользователями.
+
+        Args:
+            pipeline_id: ID воронки, в которой производится поиск.
+            purchase_number: Номер закупки.
+            excluded_user_ids: Список ID пользователей, сделки которых нужно исключить из результатов.
+        Returns:
+            Список словарей, представляющих найденные и отфильтрованные сделки.
+        """
         params = {'query': purchase_number, 'filter[pipeline_id]': pipeline_id, 'with': 'responsible_user'}
         all_leads = await self._get_all_pages('/leads', entity_key_in_embedded='leads', params=params)
 
@@ -232,6 +349,15 @@ class AmoClient:
         return filtered_leads
 
     async def get_lead_details(self, lead_id: int, with_relations: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Получает полную информацию о сделке по ID.
+
+        Args:
+            lead_id: ID сделки.
+            with_relations: Список строковых названий связанных сущностей для включения в ответ (например, ['contacts', 'company']).
+        Returns:
+            Словарь с деталями сделки или None, если сделка не найдена или произошла ошибка.
+        """
         if not lead_id:
             return None
         endpoint = f"/leads/{lead_id}"
@@ -247,6 +373,20 @@ class AmoClient:
                           company_inn: Optional[str] = None, 
                           responsible_user_id: Optional[int] = None,
                           custom_fields: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Создает новую сделку в amoCRM.
+
+        Args:
+            name: Название сделки.
+            price: Бюджет сделки.
+            pipeline_id: ID воронки, в которую будет помещена сделка.
+            status_id: ID статуса сделки внутри воронки.
+            company_inn: ИНН компании для создания и привязки к сделке.
+            responsible_user_id: ID ответственного пользователя. Если None, используется ответственный по умолчанию в воронке.
+            custom_fields: Словарь с именами пользовательских полей (как в settings) и их значениями для установки в сделке.
+        Returns:
+            Словарь, представляющий созданную сделку, или None в случае ошибки.
+        """
         company_id_to_link: Optional[int] = None
         if company_inn:
             logger.info(f"Создание НОВОЙ компании для сделки '{name}' с ИНН: {company_inn} (согласно ТЗ).")
@@ -290,6 +430,16 @@ class AmoClient:
             return None
 
     async def add_note_to_lead(self, lead_id: int, note_text: str, note_type: str = "common") -> Optional[Dict[str, Any]]:
+        """
+        Добавляет примечание к сделке.
+
+        Args:
+            lead_id: ID сделки, к которой добавляется примечание.
+            note_text: Текст примечания.
+            note_type: Тип примечания (по умолчанию "common").
+        Returns:
+            Словарь, представляющий созданное примечание, или None в случае ошибки или некорректных входных данных.
+        """
         if not lead_id or not note_text:
             return None
         payload = [{"note_type": note_type, "params": {"text": note_text}}]
@@ -302,6 +452,15 @@ class AmoClient:
             return None
 
     async def update_lead(self, lead_id: int, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        Обновляет существующую сделку.
+
+        Args:
+            lead_id: ID сделки для обновления.
+            payload: Словарь с данными для обновления сделки.
+        Returns:
+            Словарь, представляющий обновленную сделку, или None в случае ошибки или некорректных входных данных.
+        """
         if not lead_id or not payload:
             return None
         try:
@@ -314,6 +473,18 @@ class AmoClient:
 
     async def create_task_for_lead(self, lead_id: int, responsible_user_id: int, text: str, 
                                    complete_till_timestamp: int, task_type_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Создает новую задачу для сделки.
+
+        Args:
+            lead_id: ID сделки, к которой привязывается задача.
+            responsible_user_id: ID ответственного пользователя задачи.
+            text: Текст задачи.
+            complete_till_timestamp: Время завершения задачи в формате Unix timestamp.
+            task_type_name: Имя типа задачи. Если None, будет использован тип по умолчанию из settings.
+        Returns:
+            Словарь, представляющий созданную задачу, или None в случае ошибки или некорректных входных данных.
+        """
         if not all([lead_id, responsible_user_id, text, complete_till_timestamp]):
             return None
         payload_item: Dict[str, Any] = {
