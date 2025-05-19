@@ -297,7 +297,26 @@ class AmoClient:
         Returns:
             Словарь, представляющий созданную компанию, или None в случае ошибки.
         """
+        task_assign_user_name = getattr(settings, 'USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA', None)
+        responsible_user_id_value = None
+
+        if task_assign_user_name:
+            try:
+                responsible_user_id_value = await self.get_user_id(task_assign_user_name)
+                if responsible_user_id_value is None:
+                    logger.warning(f"Пользователь '{task_assign_user_name}' для назначения ответственным компании не найден в amoCRM.")
+            except Exception as e:
+                logger.error(f"Ошибка при получении ID пользователя '{task_assign_user_name}' для назначения ответственным компании: {e}", exc_info=True)
+                responsible_user_id_value = None
+
         company_data: Dict[str, Any] = {"name": name}
+
+        if responsible_user_id_value is not None:
+            company_data["responsible_user_id"] = responsible_user_id_value
+            logger.debug(f"Ответственный пользователь ID {responsible_user_id_value} добавлен к данным компании.")
+        else:
+            logger.debug("Ответственный пользователь не будет установлен для компании (пользователь не найден или не указан в настройках).")
+        
         cf_values_payload = []
         if inn:
             inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY) 

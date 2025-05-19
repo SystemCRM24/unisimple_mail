@@ -243,7 +243,7 @@ async def _handle_lead_processing(
             name=deal_name, price=price_for_amo, pipeline_id=pipeline_id, status_id=target_status_id,
             company_inn=str(purchase_data.inn) if purchase_data.inn else None,
             custom_fields=custom_fields_for_creation if custom_fields_for_creation else None,
-            responsible_user_id=id_user_unsorted 
+            responsible_user_id=id_user_anastasia_popova
         )
 
         if created_lead_data:
