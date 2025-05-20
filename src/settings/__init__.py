@@ -32,11 +32,14 @@ class Settings(BaseSettings):
     
     CUSTOM_FIELD_NAME_INN_LEAD: str = "ИНН клиента"
     CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD: str = "Ссылка на закупку"
+    CUSTOM_FIELD_NAME_PURCHASE_NUMBER: str = "Номер закупки"
     CUSTOM_FIELD_NAME_INN_COMPANY: str = "ИНН"
     
     EXCLUDE_RESPONSIBLE_USERS: List[str] = ["Алена", "Новикова Евгения"]
     
-    USER_NAME_UNSORTED_LEADS: str = "НЕРАЗОБРАННЫЕ ЗАЯВКИ"
+    USER_NAME_UNSORTED_LEADS: str = "НЕРАЗОБРАННЫЕ ЗАЯВКИ!"
+    CUSTOM_FIELD_NAME_COMPANY_PHONE: str = "Раб. тел."
+    CUSTOM_FIELD_NAME_COMPANY_EMAIL: str = "Email раб."
     USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA: str = "Анастасия Попова"
     
     TASK_TEXT_NEW_TENDER_WIN: str = "Пришло обновление из базы победителей"

@@ -37,7 +37,7 @@ class AmoClient:
         self.pipelines_ids = {}
         self.statuses_ids = {}
         self.users_ids = {}
-        self.custom_fields_lead_ids = {} 
+        self.custom_fields_lead_ids = {}
         self.custom_fields_company_ids = {}
         self.task_types_ids = {}
 
@@ -97,7 +97,7 @@ class AmoClient:
                         logger.error(
                             f"API request error: {method} {full_url}, Status: {response.status}, Response: {response_text[:500]}"
                         )
-                        response.raise_for_status() 
+                        response.raise_for_status()
             except ClientResponseError as e:
                 logger.error(f"ClientResponseError for {method} {full_url}: {e.status} {e.message}")
                 raise 
@@ -139,10 +139,10 @@ class AmoClient:
                 if entities:
                     all_data.append(entities)
                 else:
-                    break 
+                    break
             else:
                 if not entities:
-                    break 
+                    break
                 all_data.extend(entities)
 
             if response.get('_links', {}).get('next'):
@@ -178,6 +178,11 @@ class AmoClient:
             company_fields_data = await self._get_all_pages('/companies/custom_fields', 'custom_fields')
             for cf in company_fields_data:
                 self.custom_fields_company_ids[cf['name']] = cf['id']
+                
+            self.custom_fields_company_ids[settings.CUSTOM_FIELD_NAME_COMPANY_PHONE] = next(
+                (cf['id'] for cf in company_fields_data if cf['name'] == settings.CUSTOM_FIELD_NAME_COMPANY_PHONE), None)
+            self.custom_fields_company_ids[settings.CUSTOM_FIELD_NAME_COMPANY_EMAIL] = next(
+                (cf['id'] for cf in company_fields_data if cf['name'] == settings.CUSTOM_FIELD_NAME_COMPANY_EMAIL), None)
 
             self.task_types_ids = {}
             logger.info("Загрузка типов задач пропущена (эндпоинт /api/v4/tasks/types недоступен).")
@@ -274,7 +279,6 @@ class AmoClient:
             'with': 'custom_fields'
         }
         companies = await self._get_all_pages('/companies', 'companies', params=params)
-
         found_companies = []
         for company in companies:
             if 'custom_fields_values' in company:
@@ -287,228 +291,267 @@ class AmoClient:
                         break
         return found_companies
 
-    async def create_company(self, name: str, inn: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    async def create_company(self, name: str, responsible_user_id: Optional[int] = None,
+                             inn: Optional[str] = None, phone_numbers: Optional[List[str]] = None,
+                             emails: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         """
         Создает новую компанию в amoCRM.
-
         Args:
             name: Название компании.
-            inn: Значение ИНН компании.
+            responsible_user_id: ID ответственного пользователя.
+            inn: ИНН компании.
+            phone_numbers: Список телефонных номеров компании.
+            emails: Список email-адресов компании.
         Returns:
             Словарь, представляющий созданную компанию, или None в случае ошибки.
         """
-        task_assign_user_name = getattr(settings, 'USER_NAME_DEFAULT_TASK_ASSIGN_POPOVA', None)
-        responsible_user_id_value = None
+        payload_item: Dict[str, Any] = {"name": name}
 
-        if task_assign_user_name:
-            try:
-                responsible_user_id_value = await self.get_user_id(task_assign_user_name)
-                if responsible_user_id_value is None:
-                    logger.warning(f"Пользователь '{task_assign_user_name}' для назначения ответственным компании не найден в amoCRM.")
-            except Exception as e:
-                logger.error(f"Ошибка при получении ID пользователя '{task_assign_user_name}' для назначения ответственным компании: {e}", exc_info=True)
-                responsible_user_id_value = None
+        if responsible_user_id:
+            payload_item["responsible_user_id"] = responsible_user_id
 
-        company_data: Dict[str, Any] = {"name": name}
+        custom_fields_values: List[Dict[str, Any]] = []
 
-        if responsible_user_id_value is not None:
-            company_data["responsible_user_id"] = responsible_user_id_value
-            logger.debug(f"Ответственный пользователь ID {responsible_user_id_value} добавлен к данным компании.")
-        else:
-            logger.debug("Ответственный пользователь не будет установлен для компании (пользователь не найден или не указан в настройках).")
-        
-        cf_values_payload = []
         if inn:
-            inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY) 
+            inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY)
             if inn_field_id:
-                cf_values_payload.append({"field_id": inn_field_id, "values": [{"value": str(inn)}]})
+                custom_fields_values.append({
+                    "field_id": inn_field_id,
+                    "values": [{"value": inn}]
+                })
             else:
-                logger.warning(f"ID для поля ИНН '{settings.CUSTOM_FIELD_NAME_INN_COMPANY}' компании не найден. ИНН не будет установлен для '{name}'.")
+                logger.warning(f"Пользовательское поле для ИНН компании ('{settings.CUSTOM_FIELD_NAME_INN_COMPANY}') не найдено. ИНН не будет добавлено.")
 
-        if cf_values_payload:
-            company_data["custom_fields_values"] = cf_values_payload
+        if phone_numbers:
+            phone_field_id = self.custom_fields_company_ids.get("Телефон")
+            if phone_field_id:
+                phone_values = [{"value": num, "enum_code": "WORK"} for num in phone_numbers]
+                custom_fields_values.append({
+                    "field_id": phone_field_id,
+                    "values": phone_values
+                })
+            else:
+                logger.warning("Системное поле 'Телефон' для компаний не найдено. Телефоны не будут добавлены.")
 
-        payload_list = [company_data]
+        if emails:
+            email_field_id = self.custom_fields_company_ids.get("Email")
+            if email_field_id:
+                email_values = [{"value": email, "enum_code": "WORK"} for email in emails]
+                custom_fields_values.append({
+                    "field_id": email_field_id,
+                    "values": email_values
+                })
+            else:
+                logger.warning("Системное поле 'Email' для компаний не найдено. Email-ы не будут добавлены.")
+
+        if custom_fields_values:
+            payload_item["custom_fields_values"] = custom_fields_values
+
+        payload = [payload_item]
         try:
-            response = await self._request('POST', '/companies', json_data=payload_list)
-            if response and '_embedded' in response and 'companies' in response['_embedded'] and response['_embedded']['companies']:
+            response = await self._request('POST', "/companies", json_data=payload)
+            if response and '_embedded' in response and 'companies' in response['_embedded']:
                 created_company = response['_embedded']['companies'][0]
-                logger.info(f"Создана компания '{name}' (ID: {created_company.get('id')}).")
+                logger.info(f"Компания '{created_company.get('name')}' (ID: {created_company.get('id')}) успешно создана.")
                 return created_company
+            else:
+                logger.error(f"Неожиданный ответ при создании компании: {response}")
+                return None
+        except ClientResponseError as e:
+            logger.error(f"Ошибка при создании компании '{name}': {e.status}, message='{e.message}', url='{e.url}'")
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка при создании компании '{name}': {e}", exc_info=True)
             return None
 
-    async def search_leads_by_name(self, pipeline_id: int, purchase_number:str, excluded_user_ids: Optional[List[int]] = None) -> List[Dict[str, Any]]:
+    async def search_leads_by_name(self, pipeline_id: int, purchase_number:str) -> List[Dict[str, Any]]:
         """
-        Ищет сделки в конкретной воронке по номеру закупки
-        и исключает сделки с определенными ответственными пользователями.
-
+        Ищет сделки в конкретной воронке по номеру закупки.
         Args:
-            pipeline_id: ID воронки, в которой производится поиск.
-            purchase_number: Номер закупки.
-            excluded_user_ids: Список ID пользователей, сделки которых нужно исключить из результатов.
+            pipeline_id: ID воронки.
+            purchase_number: Номер закупки для поиска.
         Returns:
-            Список словарей, представляющих найденные и отфильтрованные сделки.
+            Список словарей, представляющих найденные сделки.
         """
-        params = {'query': purchase_number, 'filter[pipeline_id]': pipeline_id, 'with': 'responsible_user'}
-        all_leads = await self._get_all_pages('/leads', entity_key_in_embedded='leads', params=params)
+        purchase_number_field_id = self.custom_fields_lead_ids.get(settings.CUSTOM_FIELD_NAME_PURCHASE_NUMBER)
+        if not purchase_number_field_id:
+            logger.warning(f"Пользовательское поле '{settings.CUSTOM_FIELD_NAME_PURCHASE_NUMBER}' не найдено для сделок. Поиск по номеру закупки невозможен.")
+            return []
 
-        purchase_number_field_id = self.custom_fields_lead_ids.get(settings.CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD)
+        params = {
+            'query': purchase_number,
+            'filter[pipelines][0][id]': pipeline_id,
+        }
+
+        leads = await self._get_all_pages('/leads', 'leads', params=params)
+        
         filtered_leads = []
-        for lead in all_leads:
+        for lead in leads:
             if 'custom_fields_values' in lead:
-                for custom_field in lead['custom_fields_values']:
-                    if custom_field['field_id'] == purchase_number_field_id:
-                        for value in custom_field['values']:
-                            if str(value['value']).split()[0] == purchase_number:
+                for cf_value in lead['custom_fields_values']:
+                    if cf_value['field_id'] == purchase_number_field_id:
+                        for value_obj in cf_value.get('values', []):
+                            if value_obj.get('value') == purchase_number:
                                 filtered_leads.append(lead)
                                 break
-            if excluded_user_ids and lead.get('responsible_user_id') in excluded_user_ids: continue
+                        if filtered_leads and filtered_leads[-1]['id'] == lead['id']:
+                            break
         return filtered_leads
-
-    async def get_lead_details(self, lead_id: int, with_relations: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
-        """
-        Получает полную информацию о сделке по ID.
-
-        Args:
-            lead_id: ID сделки.
-            with_relations: Список строковых названий связанных сущностей для включения в ответ (например, ['contacts', 'company']).
-        Returns:
-            Словарь с деталями сделки или None, если сделка не найдена или произошла ошибка.
-        """
-        if not lead_id:
-            return None
-        endpoint = f"/leads/{lead_id}"
-        params = {}
-        if with_relations:
-            params['with'] = ",".join(with_relations)
-        try:
-            return await self._request('GET', endpoint, params=params)
-        except Exception:
-            return None
-
-    async def create_lead(self, name: str, price: float, pipeline_id: int, status_id: int,
-                          company_inn: Optional[str] = None, 
-                          responsible_user_id: Optional[int] = None,
-                          custom_fields: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+    
+    async def create_lead(self, name: str, price: float, pipeline_id: int, status_id: int, responsible_user_id: Optional[int] = None, company_id: Optional[int] = None, custom_fields: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
         """
         Создает новую сделку в amoCRM.
-
         Args:
             name: Название сделки.
             price: Бюджет сделки.
-            pipeline_id: ID воронки, в которую будет помещена сделка.
-            status_id: ID статуса сделки внутри воронки.
-            company_inn: ИНН компании для создания и привязки к сделке.
-            responsible_user_id: ID ответственного пользователя. Если None, используется ответственный по умолчанию в воронке.
-            custom_fields: Словарь с именами пользовательских полей (как в settings) и их значениями для установки в сделке.
+            pipeline_id: ID воронки.
+            status_id: ID статуса в воронке.
+            responsible_user_id: ID ответственного пользователя.
+            company_id: ID связанной компании.
+            custom_fields: Список пользовательских полей для заполнения.
         Returns:
             Словарь, представляющий созданную сделку, или None в случае ошибки.
         """
-        company_id_to_link: Optional[int] = None
-        if company_inn:
-            logger.info(f"Создание НОВОЙ компании для сделки '{name}' с ИНН: {company_inn} (согласно ТЗ).")
-            created_company = await self.create_company(name=name, inn=str(company_inn))
-            if created_company:
-                company_id_to_link = created_company.get('id')
-            else:
-                logger.warning(f"Не удалось создать НОВУЮ компанию для сделки '{name}' (ИНН: {company_inn}). Сделка будет создана без привязки к компании.")
-
-        lead_data: Dict[str, Any] = {
-            "name": name, "price": int(price),
-            "pipeline_id": pipeline_id, "status_id": status_id,
+        payload_item: Dict[str, Any] = {
+            "name": name,
+            "price": int(price),
+            "pipeline_id": pipeline_id,
+            "status_id": status_id,
         }
         if responsible_user_id:
-            lead_data["responsible_user_id"] = responsible_user_id
+            payload_item["responsible_user_id"] = responsible_user_id
+        if company_id:
+            payload_item["_embedded"] = {"companies": [{"id": company_id}]}
 
-        cf_values_payload = []
         if custom_fields:
-            for field_name_from_settings, value in custom_fields.items():
-                field_id = self.custom_fields_lead_ids.get(field_name_from_settings) 
+            formatted_custom_fields = []
+            for field in custom_fields:
+                field_id = self.custom_fields_lead_ids.get(field["field_name"])
                 if field_id:
-                    cf_values_payload.append({"field_id": field_id, "values": [{"value": str(value)}]})
+                    formatted_custom_fields.append({"field_id": field_id, "values": [{"value": v} for v in field["values"]]})
                 else:
-                    logger.warning(f"ID для custom_fields сделки '{field_name_from_settings}' не найден. Поле не будет установлено.")
-        if cf_values_payload:
-            lead_data["custom_fields_values"] = cf_values_payload
+                    logger.warning(f"Пользовательское поле '{field['field_name']}' не найдено. Пропускаем.")
+            if formatted_custom_fields:
+                payload_item["custom_fields_values"] = formatted_custom_fields
 
-        _embedded_data = {}
-        if company_id_to_link:
-            _embedded_data["companies"] = [{"id": company_id_to_link}]
-        if _embedded_data:
-            lead_data["_embedded"] = _embedded_data
-
-        payload_list = [lead_data]
+        payload = [payload_item]
         try:
-            response = await self._request('POST', '/leads', json_data=payload_list)
+            response = await self._request('POST', '/leads', json_data=payload)
             if response and '_embedded' in response and 'leads' in response['_embedded'] and response['_embedded']['leads']:
-                return response['_embedded']['leads'][0]
+                created_lead = response['_embedded']['leads'][0]
+                logger.info(f"Создана сделка '{name}' (ID: {created_lead.get('id')}).")
+                return created_lead
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Ошибка при создании сделки '{name}': {e}", exc_info=True)
             return None
 
-    async def add_note_to_lead(self, lead_id: int, note_text: str, note_type: str = "common") -> Optional[Dict[str, Any]]:
+    async def update_lead(self, lead_id: int, name: Optional[str] = None, price: Optional[float] = None, status_id: Optional[int] = None, responsible_user_id: Optional[int] = None, custom_fields: Optional[List[Dict[str, Any]]] = None) -> Optional[Dict[str, Any]]:
+        """
+        Обновляет существующую сделку в amoCRM.
+        Args:
+            lead_id: ID сделки, которую нужно обновить.
+            name: Новое название сделки (опционально).
+            price: Новый бюджет сделки (опционально).
+            status_id: Новый ID статуса (опционально).
+            responsible_user_id: Новый ID ответственного (опционально).
+            custom_fields: Список пользовательских полей для обновления.
+        Returns:
+            Словарь, представляющий обновленную сделку, или None в случае ошибки.
+        """
+        payload_item: Dict[str, Any] = {"id": lead_id}
+        if name:
+            payload_item["name"] = name
+        if price is not None:
+            payload_item["price"] = price
+        if status_id:
+            payload_item["status_id"] = status_id
+        if responsible_user_id:
+            payload_item["responsible_user_id"] = responsible_user_id
+
+        if custom_fields:
+            formatted_custom_fields = []
+            for field in custom_fields:
+                field_id = self.custom_fields_lead_ids.get(field["field_name"])
+                if field_id:
+                    formatted_custom_fields.append({"field_id": field_id, "values": [{"value": v} for v in field["values"]]})
+                else:
+                    logger.warning(f"Пользовательское поле '{field['field_name']}' не найдено. Пропускаем при обновлении.")
+            if formatted_custom_fields:
+                payload_item["custom_fields_values"] = formatted_custom_fields
+
+        payload = [payload_item]
+        try:
+            response = await self._request('PATCH', '/leads', json_data=payload)
+            if response and '_embedded' in response and 'leads' in response['_embedded'] and response['_embedded']['leads']:
+                updated_lead = response['_embedded']['leads'][0]
+                logger.info(f"Сделка ID {lead_id} успешно обновлена.")
+                return updated_lead
+            return None
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении сделки ID {lead_id}: {e}", exc_info=True)
+            return None
+
+    async def add_note_to_lead(self, lead_id: int, text: str) -> Optional[Dict[str, Any]]:
         """
         Добавляет примечание к сделке.
-
         Args:
             lead_id: ID сделки, к которой добавляется примечание.
-            note_text: Текст примечания.
-            note_type: Тип примечания (по умолчанию "common").
+            text: Текст примечания.
         Returns:
-            Словарь, представляющий созданное примечание, или None в случае ошибки или некорректных входных данных.
+            Словарь, представляющий созданное примечание, или None в случае ошибки.
         """
-        if not lead_id or not note_text:
-            return None
-        payload = [{"note_type": note_type, "params": {"text": note_text}}]
+        payload = [
+            {
+                "entity_id": lead_id,
+                "note_type": "common",
+                "params": {
+                    "text": text
+                }
+            }
+        ]
         try:
-            response = await self._request('POST', f"/leads/{lead_id}/notes", json_data=payload)
+            response = await self._request('POST', '/leads/notes', json_data=payload)
             if response and '_embedded' in response and 'notes' in response['_embedded'] and response['_embedded']['notes']:
-                return response['_embedded']['notes'][0]
+                created_note = response['_embedded']['notes'][0]
+                logger.info(f"Примечание успешно добавлено к сделке ID {lead_id}.")
+                return created_note
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении примечания к сделке ID {lead_id}: {e}", exc_info=True)
             return None
 
-    async def update_lead(self, lead_id: int, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def create_task(
+        self,
+        entity_id: int,
+        responsible_user_id: int,
+        text: str,
+        complete_till_timestamp: int,
+        entity_type: str = "leads",
+        task_type_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
-        Обновляет существующую сделку.
-
+        Создает новую задачу в amoCRM для указанной сущности.
         Args:
-            lead_id: ID сделки для обновления.
-            payload: Словарь с данными для обновления сделки.
-        Returns:
-            Словарь, представляющий обновленную сделку, или None в случае ошибки или некорректных входных данных.
-        """
-        if not lead_id or not payload:
-            return None
-        try:
-            response = await self._request('PATCH', f"/leads/{lead_id}", json_data=payload)
-            if response and response.get('id') == lead_id:
-                return response
-            return None
-        except Exception:
-            return None
-
-    async def create_task_for_lead(self, lead_id: int, responsible_user_id: int, text: str, 
-                                   complete_till_timestamp: int, task_type_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        Создает новую задачу для сделки.
-
-        Args:
-            lead_id: ID сделки, к которой привязывается задача.
-            responsible_user_id: ID ответственного пользователя задачи.
+            entity_id: ID сущности (сделки, контакта, компании), к которой привязана задача.
+            responsible_user_id: ID ответственного пользователя.
             text: Текст задачи.
             complete_till_timestamp: Время завершения задачи в формате Unix timestamp.
+            entity_type: Тип сущности ("leads", "contacts", "companies"). По умолчанию "leads".
             task_type_name: Имя типа задачи. Если None, будет использован тип по умолчанию из settings.
         Returns:
             Словарь, представляющий созданную задачу, или None в случае ошибки или некорректных входных данных.
         """
-        if not all([lead_id, responsible_user_id, text, complete_till_timestamp]):
+        if not all([entity_id, responsible_user_id, text, complete_till_timestamp]):
+            logger.error("Недостаточно данных для создания задачи: entity_id, responsible_user_id, text, complete_till_timestamp должны быть заполнены.")
             return None
+        
         payload_item: Dict[str, Any] = {
-            "responsible_user_id": responsible_user_id, "entity_id": lead_id,
-            "entity_type": "leads", "text": text, "complete_till": complete_till_timestamp,
+            "responsible_user_id": responsible_user_id,
+            "entity_id": entity_id,
+            "entity_type": entity_type,
+            "text": text,
+            "complete_till": complete_till_timestamp,
         }
 
         task_type_to_use_name = task_type_name if task_type_name else settings.TASK_TYPE_NAME_DEFAULT
@@ -517,13 +560,67 @@ class AmoClient:
         if task_type_id:
             payload_item["task_type_id"] = task_type_id
         else:
-            logger.warning(f"Тип задачи '{task_type_to_use_name}' не найден по имени. API использует тип по умолчанию (или может вернуть ошибку, если тип обязателен и дефолта нет).")
-
+            logger.warning(f"Тип задачи '{task_type_to_use_name}' не найден по имени в справочнике ID. Задача будет создана без явного указания типа. Возможно, AmoCRM применит тип по умолчанию.")
+            
         payload = [payload_item]
         try:
-            response = await self._request('POST', "/tasks", json_data=payload)
-            if response and '_embedded' in response and 'tasks' in response['_embedded'] and response['_embedded']['tasks']:
-                return response['_embedded']['tasks'][0]
+            async with self._rate_limit:
+                response = await self._request('POST', "/tasks", json_data=payload)
+            
+            if response and '_embedded' in response and 'tasks' in response['_embedded']:
+                created_task = response['_embedded']['tasks'][0]
+                logger.info(f"Задача ID {created_task.get('id')} успешно создана для {entity_type} ID {entity_id}.")
+                return created_task
+            else:
+                logger.error(f"Неожиданный ответ при создании задачи: {response}")
+                return None
+        except ClientResponseError as e:
+            logger.error(f"Ошибка при создании задачи для {entity_type} ID {entity_id}: {e.status}, message='{e.message}', url='{e.url}'")
             return None
-        except Exception:
+        except Exception as e:
+            logger.error(f"Неизвестная ошибка при создании задачи для {entity_type} ID {entity_id}: {e}", exc_info=True)
             return None
+
+    async def get_linked_companies_to_lead(self, lead_id: int) -> List[Dict[str, Any]]:
+        """
+        Получает список компаний, связанных со сделкой.
+        Args:
+            lead_id: ID сделки.
+        Returns:
+            Список словарей, представляющих связанные компании.
+        """
+        endpoint = f"/leads/{lead_id}"
+        try:
+            response = await self._request('GET', endpoint, params={'with': 'companies'})
+            if response and '_embedded' in response and 'companies' in response['_embedded']:
+                return response['_embedded']['companies']
+            return []
+        except Exception as e:
+            logger.error(f"Ошибка при получении связанных компаний для сделки ID {lead_id}: {e}", exc_info=True)
+            return []
+
+    async def link_company_to_lead(self, lead_id: int, company_id: int) -> bool:
+        """
+        Привязывает компанию к сделке.
+        Args:
+            lead_id: ID сделки.
+            company_id: ID компании.
+        Returns:
+            True, если привязка успешна, False в противном случае.
+        """
+        payload = [
+            {
+                "id": lead_id,
+                "_embedded": {
+                    "companies": [
+                        {"id": company_id}
+                    ]
+                }
+            }
+        ]
+        try:
+            response = await self._request('PATCH', '/leads', json_data=payload)
+            return response is not None
+        except Exception as e:
+            logger.error(f"Ошибка при привязке компании ID {company_id} к сделке ID {lead_id}: {e}", exc_info=True)
+            return False
