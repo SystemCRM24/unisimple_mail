@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     MIN_LEAD_BUDGET: int = 100_000
     PIPELINE_NAME_GOSZAKAZ: str = "Гос.заказ - прогрев клиента"
-    STATUS_NAME_POBEDITELI: str = "Победители"
+    STATUS_NAME_POBEDITELI: str = "победители"
     
     CUSTOM_FIELD_NAME_INN_LEAD: str = "ИНН клиента"
     CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD: str = "Ссылка на закупку"
