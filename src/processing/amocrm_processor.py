@@ -255,7 +255,7 @@ async def _handle_lead_processing(
                 {"field_name": settings.CUSTOM_FIELD_NAME_INN_LEAD, "values": [str(purchase_data.inn)]},
                 {"field_name": settings.CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD, "values": [purchase_data.eis_url]},
                 {"field_name": settings.CUSTOM_FIELD_NAME_PURCHASE_NUMBER, "values": [purchase_data.purchase_number]},
-                {"field_name": settings.CUSTOM_FIELD_NAME_TIME_ZONE, "value": [purchase_data.time_zone]}
+                {"field_name": settings.CUSTOM_FIELD_NAME_TIME_ZONE, "values": [purchase_data.time_zone]}
             ]
         )
         if created_lead:
