@@ -56,10 +56,10 @@ def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
         f"Дата итогов: {format_value(purchase_data.result_date)}",
         f"Наименование заказчика: {format_value(purchase_data.customer_name)}",
         f"НМЦК: {format_value(purchase_data.nmck)}",
-        f"Обеспечение контракта: {format_number_with_spaces(purchase_data.contract_securing)}",
+        f"Обеспечение контракта: {format_number_with_spaces(str(purchase_data.contract_securing))}",
         f"Обеспечение гарантийных обязательств: {format_value(purchase_data.warranty_obligations_securing)}",
         f"Окончание контракта: {format_value(purchase_data.contract_end_date)}",
-        f"Цена победителя: {format_number_with_spaces(purchase_data.winner_price)}"
+        f"Цена победителя: {format_number_with_spaces(str(purchase_data.winner_price))}"
     ]
     contact_details_lines = []
     for i in range(1, 4):
