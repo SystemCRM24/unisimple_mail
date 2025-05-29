@@ -3,6 +3,7 @@ CREATE TABLE IF NOT EXISTS state_purchases (
     eis_url TEXT,
     winner_name TEXT,
     inn TEXT,
+    time_zone TEXT,
     result_date DATE,
     customer_name TEXT,
     nmck NUMERIC(15, 2),

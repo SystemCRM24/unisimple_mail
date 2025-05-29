@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD: str = "Ссылка на закупку"
     CUSTOM_FIELD_NAME_PURCHASE_NUMBER: str = "Номер закупки"
     CUSTOM_FIELD_NAME_INN_COMPANY: str = "ИНН"
+    CUSTOM_FIELD_NAME_TIME_ZONE: str = "Часовой пояс"
     
     EXCLUDE_RESPONSIBLE_USERS: List[str] = ["Алена", "Новикова Евгения"]
     

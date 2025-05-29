@@ -28,6 +28,7 @@ class StatePurchase(BaseModel):
     email_3: Optional[str] = Field(None, alias='Email 3')
     smp_advantages: Optional[str] = Field(None, alias='Преимущества СМП')
     smp_status: Optional[str] = Field(None, alias='Статус СМП у победителя')
+    time_zone: Optional[str] = Field(None, alias='Часовой пояс (МСК)')
 
     @field_validator('phone_1', 'phone_2', 'phone_3', 'inn', mode='before')
     def validate_numbers_to_str(cls, v: Optional[int | float]) -> Optional[str]:

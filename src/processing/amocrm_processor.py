@@ -28,6 +28,18 @@ def format_value(value: Any) -> str:
     return str(value)
 
 
+def format_number_with_spaces(number_str: str) -> str:
+    if not number_str.isdigit():
+        raise ValueError("Входная строка должна содержать только цифры")
+
+    reversed_str = number_str[::-1]
+    chunks = [reversed_str[i:i+3] for i in range(0, len(reversed_str), 3)]
+
+    formatted = ' '.join(chunks)[::-1]
+
+    return formatted + " р."
+
+
 def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
     """
     Генерирует форматированный текст примечания для сделки о выигрыше в закупке.
@@ -44,10 +56,10 @@ def generate_note_text_for_win(purchase_data: DBStatePurchase) -> str:
         f"Дата итогов: {format_value(purchase_data.result_date)}",
         f"Наименование заказчика: {format_value(purchase_data.customer_name)}",
         f"НМЦК: {format_value(purchase_data.nmck)}",
-        f"Обеспечение контракта: {format_value(purchase_data.contract_securing)}",
+        f"Обеспечение контракта: {format_number_with_spaces(format_value(purchase_data.contract_securing))}",
         f"Обеспечение гарантийных обязательств: {format_value(purchase_data.warranty_obligations_securing)}",
         f"Окончание контракта: {format_value(purchase_data.contract_end_date)}",
-        f"Цена победителя: {format_value(purchase_data.winner_price)}"
+        f"Цена победителя: {format_number_with_spaces(format_value(purchase_data.winner_price))}"
     ]
     contact_details_lines = []
     for i in range(1, 4):
@@ -242,7 +254,8 @@ async def _handle_lead_processing(
             custom_fields=[
                 {"field_name": settings.CUSTOM_FIELD_NAME_INN_LEAD, "values": [str(purchase_data.inn)]},
                 {"field_name": settings.CUSTOM_FIELD_NAME_PURCHASE_LINK_LEAD, "values": [purchase_data.eis_url]},
-                {"field_name": settings.CUSTOM_FIELD_NAME_PURCHASE_NUMBER, "values": [purchase_data.purchase_number]}
+                {"field_name": settings.CUSTOM_FIELD_NAME_PURCHASE_NUMBER, "values": [purchase_data.purchase_number]},
+                {"field_name": settings.CUSTOM_FIELD_NAME_TIME_ZONE, "value": [purchase_data.time_zone]}
             ]
         )
         if created_lead:
