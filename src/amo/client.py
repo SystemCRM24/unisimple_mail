@@ -278,9 +278,9 @@ class AmoClient:
         Returns:
             Список словарей, представляющих найденные компании.
         """
-        inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY)
+        inn_field_id = self.custom_fields_company_ids.get(settings.CUSTOM_FIELD_NAME_INN_LEAD)
         if not inn_field_id:
-            logger.warning(f"Пользовательское поле '{settings.CUSTOM_FIELD_NAME_INN_COMPANY}' (ИНН) не найдено для компаний. Поиск по ИНН невозможен.")
+            logger.warning(f"Пользовательское поле '{settings.CUSTOM_FIELD_NAME_INN_LEAD}' (ИНН) не найдено для компаний. Поиск по ИНН невозможен.")
             return []
 
         params = {
