@@ -416,9 +416,9 @@ class AmoClient:
 
     async def search_leads_by_inn(self, pipeline_id: int, inn: str) -> List[Dict[str, Any]]:
         """Ищет сделки в конкретной воронке по ИНН клиента."""
-        inn_field_id = self.custom_fields_lead_ids.get(settings.CUSTOM_FIELD_NAME_INN_COMPANY)
+        inn_field_id = self.custom_fields_lead_ids.get(settings.CUSTOM_FIELD_NAME_INN_LEAD)
         if not inn_field_id:
-            logger.warning(f"Пользовательское поле '{settings.CUSTOM_FIELD_NAME_INN_COMPANY}' не найдено для сделок. Поиск по номеру закупки невозможен.")
+            logger.warning(f"Пользовательское поле '{settings.CUSTOM_FIELD_NAME_INN_LEAD}' не найдено для сделок. Поиск по номеру закупки невозможен.")
             return []
         params = {'query': inn, 'filter[pipelines][0][id]': pipeline_id}
         leads = await self._get_all_pages('/leads', 'leads', params=params)
@@ -518,7 +518,7 @@ class AmoClient:
         if name:
             payload_item["name"] = name
         if price is not None:
-            payload_item["price"] = price
+            payload_item["price"] = int(price)
         if status_id:
             payload_item["status_id"] = status_id
         if responsible_user_id:
