@@ -234,10 +234,8 @@ async def _handle_lead_processing(
                 logger.error(f"Не удалось создать компанию для '{purchase_data.winner_name}' (ИНН: {purchase_data.inn}).")
                 return
 
-    found_leads = await amo_client.search_leads_by_name(
-        pipeline_id=pipeline_id,
-        purchase_number=purchase_data.purchase_number
-    )
+    #found_leads = await amo_client.search_leads_by_name(pipeline_id, purchase_data.purchase_number)
+    found_leads = await amo_client.search_leads_by_inn(pipeline_id, purchase_data.inn)
 
     lead_info_for_task: Dict[str, Any] = {"name": deal_name}
 
